@@ -3,7 +3,7 @@ import { useBlockchain } from '../contexts/BlockchainContext';
 import { formatAddress, formatTimestamp, formatUSDC, fromBytes32 } from '../utils/format';
 import { useTenantDeposit } from '../hooks/useTenantDeposit';
 
-const VaultCard = ({ vaultId, vaultAddress, onRefresh }) => {
+const VaultCard = ({ vaultId, vaultAddress, userRole, onRefresh }) => {
   const { account, getVaultContract, contracts } = useBlockchain();
   const { deposit, loading: depositLoading, error: depositError } = useTenantDeposit();
   const [vault, setVault] = useState(null);
@@ -29,6 +29,18 @@ const VaultCard = ({ vaultId, vaultAddress, onRefresh }) => {
       const propertyLocation = await vaultContract.propertyLocation();
       const poolShares = await vaultContract.poolShares();
       
+      // Get current share value if shares exist
+      let currentShareValue = 0n;
+      if (poolShares > 0 && contracts.pool) {
+        try {
+          const sharePrice = await contracts.pool.sharePrice();
+          // Calculate current value: shares * sharePrice / 10^6 (USDC decimals)
+          currentShareValue = (poolShares * sharePrice) / 1000000n;
+        } catch (error) {
+          console.error("Error calculating share value:", error);
+        }
+      }
+      
       setVault({
         id: vaultId,
         address: vaultAddress,
@@ -41,7 +53,8 @@ const VaultCard = ({ vaultId, vaultAddress, onRefresh }) => {
         settled,
         propertyName: fromBytes32(propertyName),
         propertyLocation: fromBytes32(propertyLocation),
-        poolShares
+        poolShares,
+        currentShareValue
       });
     } catch (error) {
       console.error(`Error loading vault ${vaultId}:`, error);
@@ -126,17 +139,39 @@ const VaultCard = ({ vaultId, vaultAddress, onRefresh }) => {
     return <div>Error loading vault</div>;
   }
 
-  const isLandlord = account?.toLowerCase() === vault.landlord.toLowerCase();
-  const isTenant = account?.toLowerCase() === vault.tenant.toLowerCase();
+  // The userRole is passed from parent component, but we still verify with contract data
+  const isLandlord = userRole === 'landlord' && account?.toLowerCase() === vault.landlord.toLowerCase();
+  const isTenant = userRole === 'tenant' && account?.toLowerCase() === vault.tenant.toLowerCase();
   const now = Math.floor(Date.now() / 1000);
   const canSettle = isLandlord && vault.deposited && !vault.settled && now >= Number(vault.endTs);
   const canDeposit = isTenant && !vault.deposited;
 
+  // Determine card styling based on status and role
+  let borderClass = userRole === 'landlord' ? 'border-blue-200' : 'border-green-200';
+  let bgClass = 'bg-white';
+  
+  if (vault.settled) {
+    borderClass = 'border-green-300';
+    bgClass = 'bg-green-50';
+  }
+  
   return (
-    <div className="bg-white rounded-lg shadow-md p-4 border border-gray-200">
+    <div className={`${bgClass} rounded-lg shadow-md p-4 border ${borderClass}`}>
       <div className="flex justify-between items-start">
         <div>
-          <h3 className="text-lg font-semibold">{vault.propertyName || `Vault #${vault.id}`}</h3>
+          <div className="flex items-center mb-1">
+            <h3 className="text-lg font-semibold mr-2">{vault.propertyName || `Vault #${vault.id}`}</h3>
+            <span className={`px-2 py-0.5 text-xs rounded-full ${
+              userRole === 'landlord' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
+            }`}>
+              {userRole === 'landlord' ? 'Landlord' : 'Tenant'}
+            </span>
+            {vault.settled && (
+              <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-green-100 text-green-800">
+                Completed
+              </span>
+            )}
+          </div>
           {vault.propertyLocation && (
             <p className="text-sm text-gray-600">{vault.propertyLocation}</p>
           )}
@@ -155,10 +190,16 @@ const VaultCard = ({ vaultId, vaultAddress, onRefresh }) => {
       <div className="mt-3 space-y-2 text-sm">
         <div className="grid grid-cols-2 gap-2">
           <p className="text-gray-600">Landlord:</p>
-          <p>{formatAddress(vault.landlord)} {isLandlord && <span className="text-xs bg-gray-100 px-1 rounded">(You)</span>}</p>
+          <p className={isLandlord ? "font-medium text-blue-700" : ""}>
+            {formatAddress(vault.landlord)} 
+            {isLandlord && <span className="ml-1 text-xs bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded-full">You</span>}
+          </p>
           
           <p className="text-gray-600">Tenant:</p>
-          <p>{formatAddress(vault.tenant)} {isTenant && <span className="text-xs bg-gray-100 px-1 rounded">(You)</span>}</p>
+          <p className={isTenant ? "font-medium text-green-700" : ""}>
+            {formatAddress(vault.tenant)} 
+            {isTenant && <span className="ml-1 text-xs bg-green-100 text-green-800 px-1.5 py-0.5 rounded-full">You</span>}
+          </p>
           
           <p className="text-gray-600">Deposit:</p>
           <p>{formatUSDC(vault.depositAmount)} USDC</p>
@@ -168,6 +209,21 @@ const VaultCard = ({ vaultId, vaultAddress, onRefresh }) => {
           
           <p className="text-gray-600">End Date:</p>
           <p>{formatTimestamp(vault.endTs)}</p>
+          
+          {vault.deposited && !vault.settled && (
+            <>
+              <p className="text-gray-600">Pool Shares:</p>
+              <p>{(vault.poolShares / 1000000n)?.toString() || '0'} dUSDC</p>
+              
+              <p className="text-gray-600">Current Value:</p>
+              <p>{formatUSDC(vault.currentShareValue || 0)} USDC</p>
+              
+              <p className="text-gray-600">Yield Earned:</p>
+              <p className={vault.currentShareValue > vault.depositAmount ? "text-green-600 font-semibold" : "text-gray-600"}>
+                {formatUSDC((vault.currentShareValue || 0) - vault.depositAmount)} USDC
+              </p>
+            </>
+          )}
         </div>
       </div>
       

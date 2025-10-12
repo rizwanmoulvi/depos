@@ -22,12 +22,20 @@ export const BlockchainProvider = ({ children }) => {
     pool: null
   });
   const [networkError, setNetworkError] = useState(null);
+  const [isAutoConnecting, setIsAutoConnecting] = useState(true);
 
-  const connectWallet = useCallback(async () => {
+  const disconnectWallet = useCallback(() => {
+    setAccount(null);
+    setSigner(null);
+    setProvider(null);
+    localStorage.removeItem('walletConnected');
+  }, []);
+
+  const connectWallet = useCallback(async (isAutoConnect = false) => {
     try {
       if (!window.ethereum) {
         alert('Please install MetaMask');
-        return;
+        return false;
       }
 
       const provider = new ethers.BrowserProvider(window.ethereum);
@@ -42,16 +50,42 @@ export const BlockchainProvider = ({ children }) => {
         setNetworkError(null);
       }
 
-      const accounts = await provider.send("eth_requestAccounts", []);
-      setAccount(accounts[0]);
+      // If auto-connecting, use eth_accounts which doesn't trigger a popup
+      // Otherwise use eth_requestAccounts which will prompt the user
+      const method = isAutoConnect ? "eth_accounts" : "eth_requestAccounts";
+      const accounts = await provider.send(method, []);
+      
+      // If no accounts, auto-connect failed (user not previously connected)
+      if (accounts.length === 0) {
+        if (isAutoConnect) {
+          return false; // Auto-connect failed, don't show error
+        }
+        throw new Error("No accounts found. Please unlock MetaMask.");
+      }
+
+      const account = accounts[0];
+      setAccount(account);
       
       const signer = await provider.getSigner();
       setSigner(signer);
       setProvider(provider);
 
       initContracts(provider, signer);
+      
+      // Save to localStorage to enable auto-connect
+      localStorage.setItem('walletConnected', 'true');
+      
+      return true;
     } catch (error) {
       console.error('Error connecting wallet:', error);
+      if (!isAutoConnect) {
+        alert(`Error connecting wallet: ${error.message}`);
+      }
+      return false;
+    } finally {
+      if (isAutoConnect) {
+        setIsAutoConnecting(false);
+      }
     }
   }, []);
 
@@ -96,15 +130,40 @@ export const BlockchainProvider = ({ children }) => {
     );
   }, [signer]);
 
+  // Auto-connect on page load
+  useEffect(() => {
+    const attemptAutoConnect = async () => {
+      if (localStorage.getItem('walletConnected') === 'true') {
+        try {
+          const success = await connectWallet(true); // true = auto-connect mode
+          if (!success) {
+            console.log("Auto-connect failed. User will need to connect manually.");
+            localStorage.removeItem('walletConnected');
+          }
+        } catch (error) {
+          console.error("Error during auto-connect:", error);
+          localStorage.removeItem('walletConnected');
+        }
+      } else {
+        setIsAutoConnecting(false);
+      }
+    };
+
+    if (window.ethereum) {
+      attemptAutoConnect();
+    } else {
+      setIsAutoConnecting(false);
+    }
+  }, [connectWallet]);
+
   useEffect(() => {
     // Handle account changes
     const handleAccountsChanged = (accounts) => {
       if (accounts.length === 0) {
-        setAccount(null);
-        setSigner(null);
+        disconnectWallet();
       } else if (accounts[0] !== account) {
         setAccount(accounts[0]);
-        connectWallet(); // Reconnect with the new account
+        connectWallet(true); // Reconnect with the new account
       }
     };
 
@@ -132,9 +191,11 @@ export const BlockchainProvider = ({ children }) => {
     provider,
     signer,
     contracts,
-    connectWallet,
+    connectWallet: (isAuto) => connectWallet(isAuto),
+    disconnectWallet,
     networkError,
     getVaultContract,
+    isAutoConnecting,
   };
 
   return (
