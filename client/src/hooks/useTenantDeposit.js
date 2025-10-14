@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ethers } from "ethers";
 import ERC20_ABI from "../abis/ERC20.json";
-import VAULT_ABI from "../abis/EscrowVault.json";
+import VAULT_ABI from "../abis/EscrowVaultMinimal.json";
 
 export function useTenantDeposit() {
   const [loading, setLoading] = useState(false);

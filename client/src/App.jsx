@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Header from './components/Header';
 import Dashboard from './components/Dashboard';
 import CreateAgreementForm from './components/CreateAgreementForm';
-import SimulateYield from './components/SimulateYield';
+import BonzoIntegrationInfo from './components/BonzoIntegrationInfo';
 import USDCFaucet from './components/USDCFaucet';
 import { BlockchainProvider } from './contexts/BlockchainContext';
 
@@ -26,8 +26,8 @@ function App() {
               <CreateAgreementForm onAgreementCreated={handleRefresh} />
               
               <div className="space-y-4">
-                <SimulateYield onYieldAdded={handleRefresh} />
-                <USDCFaucet onUSDCMinted={handleRefresh} />
+                <BonzoIntegrationInfo />
+                <USDCFaucet />
               </div>
             </div>
           </div>

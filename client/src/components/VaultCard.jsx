@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { ethers } from 'ethers';
 import { useBlockchain } from '../contexts/BlockchainContext';
 import { formatAddress, formatTimestamp, formatUSDC, fromBytes32 } from '../utils/format';
 import { useTenantDeposit } from '../hooks/useTenantDeposit';
@@ -27,17 +28,23 @@ const VaultCard = ({ vaultId, vaultAddress, userRole, onRefresh }) => {
       const settled = await vaultContract.settled();
       const propertyName = await vaultContract.propertyName();
       const propertyLocation = await vaultContract.propertyLocation();
-      const poolShares = await vaultContract.poolShares();
       
-      // Get current share value if shares exist
-      let currentShareValue = 0n;
-      if (poolShares > 0 && contracts.pool) {
+      // Get aToken address from environment (same for all vaults on testnet)
+      const aTokenAddress = import.meta.env.VITE_ATOKEN_ADDRESS;
+      
+      // Get current aToken balance and value
+      let currentShareValue = depositAmount;
+      if (deposited && !settled && aTokenAddress) {
         try {
-          const sharePrice = await contracts.pool.sharePrice();
-          // Calculate current value: shares * sharePrice / 10^6 (USDC decimals)
-          currentShareValue = (poolShares * sharePrice) / 1000000n;
+          const aTokenContract = new ethers.Contract(
+            aTokenAddress,
+            ["function balanceOf(address account) external view returns (uint256)"],
+            vaultContract.runner
+          );
+          const aTokenBalance = await aTokenContract.balanceOf(vaultAddress);
+          currentShareValue = aTokenBalance;
         } catch (error) {
-          console.error("Error calculating share value:", error);
+          console.error("Error getting aToken balance:", error);
         }
       }
       
@@ -53,9 +60,9 @@ const VaultCard = ({ vaultId, vaultAddress, userRole, onRefresh }) => {
         settled,
         propertyName: fromBytes32(propertyName),
         propertyLocation: fromBytes32(propertyLocation),
-        poolShares,
         currentShareValue
       });
+      console.log("Loaded vault details:", vault);
     } catch (error) {
       console.error(`Error loading vault ${vaultId}:`, error);
     } finally {
@@ -189,6 +196,9 @@ const VaultCard = ({ vaultId, vaultAddress, userRole, onRefresh }) => {
       
       <div className="mt-3 space-y-2 text-sm">
         <div className="grid grid-cols-2 gap-2">
+          <p className="text-gray-600">Vault Address:</p>
+          <p className="font-mono text-xs break-all">{formatAddress(vault.address)}</p>
+          
           <p className="text-gray-600">Landlord:</p>
           <p className={isLandlord ? "font-medium text-blue-700" : ""}>
             {formatAddress(vault.landlord)} 
@@ -212,20 +222,32 @@ const VaultCard = ({ vaultId, vaultAddress, userRole, onRefresh }) => {
           
           {vault.deposited && !vault.settled && (
             <>
-              <p className="text-gray-600">Pool Shares:</p>
-              <p>{(vault.poolShares / 1000000n)?.toString() || '0'} dUSDC</p>
+              <p className="text-gray-600">aToken Balance:</p>
+              <p className="font-mono text-xs text-purple-600">{formatUSDC(vault.currentShareValue || 0)} aUSDC</p>
               
               <p className="text-gray-600">Current Value:</p>
-              <p>{formatUSDC(vault.currentShareValue || 0)} USDC</p>
+              <p className="font-semibold">{formatUSDC(vault.currentShareValue || 0)} USDC</p>
               
               <p className="text-gray-600">Yield Earned:</p>
-              <p className={vault.currentShareValue > vault.depositAmount ? "text-green-600 font-semibold" : "text-gray-600"}>
-                {formatUSDC((vault.currentShareValue || 0) - vault.depositAmount)} USDC
+              <p className={(vault.currentShareValue || 0n) > vault.depositAmount ? "text-green-600 font-semibold" : "text-gray-600"}>
+                {formatUSDC((vault.currentShareValue || 0n) - vault.depositAmount)} USDC
               </p>
             </>
           )}
         </div>
       </div>
+      
+      {vault.deposited && !vault.settled && (
+        <div className="mt-3 p-3 bg-purple-50 border border-purple-200 rounded text-xs">
+          <p className="font-semibold text-purple-800 mb-1">💰 Bonzo Finance Integration</p>
+          <p className="text-gray-600">
+            Funds are supplied to Bonzo Finance lending pool. The aToken balance represents your deposit plus accrued yield.
+          </p>
+          <p className="text-gray-500 mt-1 font-mono text-[10px] break-all">
+            aToken: {import.meta.env.VITE_ATOKEN_ADDRESS}
+          </p>
+        </div>
+      )}
       
       <div className="mt-4 flex justify-end space-x-2">
         {canDeposit && (

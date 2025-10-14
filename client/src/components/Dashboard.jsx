@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useBlockchain } from '../contexts/BlockchainContext';
 import VaultCard from '../components/VaultCard';
 import { ethers } from 'ethers';
-import EscrowVaultABI from '../abis/EscrowVault.json';
+import EscrowVaultABI from '../abis/EscrowVaultMinimal.json';
 
 const Dashboard = () => {
   const { contracts, account, provider, getVaultContract } = useBlockchain();

@@ -6,7 +6,8 @@ import "./EscrowVault.sol";
 contract EscrowFactory {
     address public owner;
     address public usdc;
-    address public pool;
+    address public lendingPool;
+    address public aToken;
     address public treasury;
     uint256 public nextId;
 
@@ -19,10 +20,11 @@ contract EscrowFactory {
         address tenant
     );
 
-    constructor(address _usdc, address _pool, address _treasury) {
+    constructor(address _usdc, address _lendingPool, address _aToken, address _treasury) {
         owner = msg.sender;
         usdc = _usdc;
-        pool = _pool;
+        lendingPool = _lendingPool;
+        aToken = _aToken;
         treasury = _treasury;
         nextId = 1;
     }
@@ -49,22 +51,27 @@ contract EscrowFactory {
     ) external returns (address) {
         require(endTs > startTs, "invalid times");
 
+        // Deploy a fresh vault (constructor sets factory = msg.sender automatically)
         EscrowVault vault = new EscrowVault();
 
-        // Convert strings to bytes32 inline to reduce stack variables
-        vault.init(
-            address(this),
-            landlord,
-            tenant,
-            usdc,
-            pool,
-            treasury,
-            depositAmount,
-            startTs,
-            endTs,
-            stringToBytes32(propertyNameStr),
-            stringToBytes32(propertyLocationStr)
-        );
+        // Build the InitParams struct (single stack slot)
+        EscrowVault.InitParams memory params = EscrowVault.InitParams({
+            factory: address(this),
+            landlord: landlord,
+            tenant: tenant,
+            usdc: usdc,
+            lendingPool: lendingPool,
+            aToken: aToken,
+            treasury: treasury,
+            depositAmount: depositAmount,
+            startTs: startTs,
+            endTs: endTs,
+            propertyName: stringToBytes32(propertyNameStr),
+            propertyLocation: stringToBytes32(propertyLocationStr)
+        });
+
+        // Initialize the vault with a single struct argument
+        vault.init(params);
 
         uint256 id = nextId++;
         vaults[id] = address(vault);

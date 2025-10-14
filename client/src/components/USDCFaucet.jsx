@@ -1,12 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useBlockchain } from '../contexts/BlockchainContext';
-import { parseUSDC, formatUSDC } from '../utils/format';
+import { formatUSDC } from '../utils/format';
 
-const USDCFaucet = ({ onUSDCMinted }) => {
+const USDCFaucet = () => {
   const { account, contracts } = useBlockchain();
-  const [amount, setAmount] = useState('100');
   const [balance, setBalance] = useState('0');
-  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     const fetchBalance = async () => {
@@ -28,75 +26,36 @@ const USDCFaucet = ({ onUSDCMinted }) => {
     return () => clearInterval(intervalId);
   }, [contracts.usdc, account]);
 
-  const handleMint = async (e) => {
-    e.preventDefault();
-    
-    if (!contracts.usdc || !account || !amount) return;
-    
-    try {
-      setIsLoading(true);
-      
-      // Convert amount to USDC units (6 decimals)
-      const amountInUnits = parseUSDC(amount);
-      
-      // Call faucet function
-      const tx = await contracts.usdc.faucet(account, amountInUnits);
-      await tx.wait();
-      
-      // Update balance
-      const newBalance = await contracts.usdc.balanceOf(account);
-      setBalance(formatUSDC(newBalance));
-      
-      alert('USDC minted successfully!');
-      
-      if (onUSDCMinted) {
-        onUSDCMinted();
-      }
-    } catch (error) {
-      console.error('Error minting USDC:', error);
-      alert(`Error minting USDC: ${error.message}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   if (!account) {
     return null;
   }
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
-      <h2 className="text-xl font-semibold mb-4">USDC Faucet</h2>
+      <h2 className="text-xl font-semibold mb-4">USDC Balance</h2>
       
-      <div className="mb-4">
-        <p className="text-gray-600">Your Balance: <span className="font-semibold">{balance} USDC</span></p>
+      <div className="mb-4 p-4 bg-gray-50 rounded">
+        <p className="text-gray-600 text-sm mb-2">Your USDC Balance:</p>
+        <p className="text-3xl font-bold text-gray-800">{balance} USDC</p>
       </div>
       
-      <form onSubmit={handleMint} className="space-y-4">
-        <div>
-          <label className="block text-gray-700 mb-1">Amount to Mint (USDC)</label>
-          <input
-            type="number"
-            placeholder="100"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className="w-full border border-gray-300 rounded px-3 py-2"
-            required
-          />
+      <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded">
+        <h3 className="font-semibold text-gray-800 mb-2">Get USDC on Hedera Testnet</h3>
+        <p className="text-sm text-gray-600 mb-3">
+          This is the real USDC token on Hedera Testnet. To get USDC:
+        </p>
+        <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
+          <li>Visit a Hedera Testnet faucet</li>
+          <li>Bridge assets to Hedera Testnet</li>
+          <li>Use a testnet exchange or swap</li>
+          <li>Get USDC from the Bonzo Finance faucet if available</li>
+        </ul>
+        <div className="mt-3 p-2 bg-white rounded border border-gray-200">
+          <p className="text-xs text-gray-500 font-mono break-all">
+            USDC Contract: {import.meta.env.VITE_USDC_ADDRESS}
+          </p>
         </div>
-        
-        <div className="flex justify-end">
-          <button
-            type="submit"
-            disabled={isLoading}
-            className={`px-4 py-2 rounded bg-green-600 text-white ${
-              isLoading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-green-700'
-            }`}
-          >
-            {isLoading ? 'Minting...' : 'Get Test USDC'}
-          </button>
-        </div>
-      </form>
+      </div>
     </div>
   );
 };

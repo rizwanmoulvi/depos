@@ -3,9 +3,8 @@ import { ethers } from 'ethers';
 
 // ABIs
 import EscrowFactoryABI from '../abis/EscrowFactory.json';
-import EscrowVaultABI from '../abis/EscrowVault.json';
-import MockAutoPoolABI from '../abis/MockAutoPool.json';
-import MockUSDCABI from '../abis/MockUSDC.json';
+import EscrowVaultABI from '../abis/EscrowVaultMinimal.json';
+import ERC20ABI from '../abis/ERC20.json';
 
 export const BlockchainContext = createContext();
 
@@ -19,7 +18,7 @@ export const BlockchainProvider = ({ children }) => {
   const [contracts, setContracts] = useState({
     factory: null,
     usdc: null,
-    pool: null
+    lendingPool: null
   });
   const [networkError, setNetworkError] = useState(null);
   const [isAutoConnecting, setIsAutoConnecting] = useState(true);
@@ -91,6 +90,12 @@ export const BlockchainProvider = ({ children }) => {
 
   const initContracts = useCallback(async (provider, signer) => {
     try {
+      console.log('Initializing contracts with addresses:', {
+        factory: import.meta.env.VITE_FACTORY_ADDRESS,
+        usdc: import.meta.env.VITE_USDC_ADDRESS,
+        lendingPool: import.meta.env.VITE_LENDING_POOL_ADDRESS
+      });
+
       const factory = new ethers.Contract(
         import.meta.env.VITE_FACTORY_ADDRESS,
         EscrowFactoryABI,
@@ -98,21 +103,30 @@ export const BlockchainProvider = ({ children }) => {
       );
 
       const usdc = new ethers.Contract(
-        import.meta.env.VITE_MOCKUSDC_ADDRESS,
-        MockUSDCABI,
+        import.meta.env.VITE_USDC_ADDRESS,
+        ERC20ABI,
         signer
       );
 
-      const pool = new ethers.Contract(
-        import.meta.env.VITE_MOCKAUTOPOOL_ADDRESS,
-        MockAutoPoolABI,
+      const lendingPool = new ethers.Contract(
+        import.meta.env.VITE_LENDING_POOL_ADDRESS,
+        [
+          "function deposit(address asset, uint256 amount, address onBehalfOf, uint16 referralCode) external payable",
+          "function withdraw(address asset, uint256 amount, address to) external returns (uint256)"
+        ],
         signer
       );
+
+      console.log('Contracts initialized successfully:', { 
+        factory: factory.target, 
+        usdc: usdc.target,
+        lendingPool: lendingPool.target
+      });
 
       setContracts({
         factory,
         usdc,
-        pool
+        lendingPool
       });
     } catch (error) {
       console.error('Error initializing contracts:', error);
