@@ -1,39 +1,26 @@
-import { useState } from 'react';
-import Header from './components/Header';
-import Dashboard from './components/Dashboard';
-import CreateAgreementForm from './components/CreateAgreementForm';
-import BonzoIntegrationInfo from './components/BonzoIntegrationInfo';
-import USDCFaucet from './components/USDCFaucet';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { BlockchainProvider } from './contexts/BlockchainContext';
+import Navbar from './components/Navbar';
+import Home from './pages/Home';
+import RoleSelectionPage from './pages/RoleSelectionPage';
+import LandlordPage from './pages/LandlordPage';
+import TenantPage from './pages/TenantPage';
 
 function App() {
-  const [refresh, setRefresh] = useState(0);
-
-  const handleRefresh = () => {
-    setRefresh(prev => prev + 1);
-  };
-
   return (
-    <BlockchainProvider>
-      <div className="min-h-screen bg-gray-100">
-        <Header />
-        
-        <main className="container mx-auto py-8 px-4">
-          <div className="grid grid-cols-1 gap-8">
-            <Dashboard key={`dashboard-${refresh}`} />
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <CreateAgreementForm onAgreementCreated={handleRefresh} />
-              
-              <div className="space-y-4">
-                <BonzoIntegrationInfo />
-                <USDCFaucet />
-              </div>
-            </div>
-          </div>
-        </main>
-      </div>
-    </BlockchainProvider>
+    <Router>
+      <BlockchainProvider>
+        <div className="min-h-screen bg-gray-900">
+          <Navbar />
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/role-selection" element={<RoleSelectionPage />} />
+            <Route path="/landlord" element={<LandlordPage />} />
+            <Route path="/tenant" element={<TenantPage />} />
+          </Routes>
+        </div>
+      </BlockchainProvider>
+    </Router>
   );
 }
 

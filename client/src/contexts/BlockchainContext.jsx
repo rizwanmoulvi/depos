@@ -22,6 +22,13 @@ export const BlockchainProvider = ({ children }) => {
   });
   const [networkError, setNetworkError] = useState(null);
   const [isAutoConnecting, setIsAutoConnecting] = useState(true);
+  
+  // Cache for vault data to prevent excessive fetching
+  const [vaultsCache, setVaultsCache] = useState({
+    data: [],
+    lastFetched: null,
+    isLoading: false
+  });
 
   const disconnectWallet = useCallback(() => {
     setAccount(null);
@@ -144,6 +151,95 @@ export const BlockchainProvider = ({ children }) => {
     );
   }, [signer]);
 
+  // Fetch all vaults with caching (5 minute cache)
+  const fetchAllVaults = useCallback(async (forceRefresh = false) => {
+    const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+    const now = Date.now();
+    
+    // Return cached data if available and not expired
+    if (!forceRefresh && vaultsCache.lastFetched && (now - vaultsCache.lastFetched < CACHE_DURATION)) {
+      console.log('Returning cached vault data');
+      return vaultsCache.data;
+    }
+    
+    // Don't fetch if already fetching
+    if (vaultsCache.isLoading) {
+      console.log('Vault fetch already in progress, waiting...');
+      return vaultsCache.data;
+    }
+    
+    if (!contracts.factory || !account || !getVaultContract) {
+      console.log('Missing dependencies for vault fetch');
+      return [];
+    }
+    
+    try {
+      setVaultsCache(prev => ({ ...prev, isLoading: true }));
+      console.log('Fetching vaults from blockchain...');
+      
+      const nextId = await contracts.factory.nextId();
+      const vaultList = [];
+      
+      for (let i = 1; i < Number(nextId); i++) {
+        try {
+          const vaultAddress = await contracts.factory.vaults(i);
+          if (vaultAddress === '0x0000000000000000000000000000000000000000') continue;
+          
+          const vaultContract = getVaultContract(vaultAddress);
+          if (!vaultContract) continue;
+          
+          const [landlord, tenant, depositAmount, startTs, endTs, deposited, settled, propertyName, propertyLocation] = await Promise.all([
+            vaultContract.landlord(),
+            vaultContract.tenant(),
+            vaultContract.depositAmount(),
+            vaultContract.startTs(),
+            vaultContract.endTs(),
+            vaultContract.deposited(),
+            vaultContract.settled(),
+            vaultContract.propertyName(),
+            vaultContract.propertyLocation()
+          ]);
+          
+          vaultList.push({
+            id: i,
+            address: vaultAddress,
+            landlord,
+            tenant,
+            depositAmount,
+            startTs,
+            endTs,
+            deposited,
+            settled,
+            propertyName,
+            propertyLocation
+          });
+        } catch (error) {
+          console.error(`Error loading vault ${i}:`, error);
+        }
+      }
+      
+      const cachedData = {
+        data: vaultList,
+        lastFetched: now,
+        isLoading: false
+      };
+      
+      setVaultsCache(cachedData);
+      console.log(`Cached ${vaultList.length} vaults`);
+      return vaultList;
+    } catch (error) {
+      console.error('Error fetching vaults:', error);
+      setVaultsCache(prev => ({ ...prev, isLoading: false }));
+      return [];
+    }
+  }, [contracts.factory, account, getVaultContract, vaultsCache.lastFetched, vaultsCache.isLoading, vaultsCache.data]);
+
+  // Invalidate cache (call this after creating/updating vaults)
+  const invalidateVaultsCache = useCallback(() => {
+    console.log('Invalidating vaults cache');
+    setVaultsCache({ data: [], lastFetched: null, isLoading: false });
+  }, []);
+
   // Auto-connect on page load
   useEffect(() => {
     const attemptAutoConnect = async () => {
@@ -210,6 +306,8 @@ export const BlockchainProvider = ({ children }) => {
     networkError,
     getVaultContract,
     isAutoConnecting,
+    fetchAllVaults,
+    invalidateVaultsCache,
   };
 
   return (

@@ -4,14 +4,51 @@ import { useBlockchain } from '../contexts/BlockchainContext';
 import { formatAddress, formatTimestamp, formatUSDC, fromBytes32 } from '../utils/format';
 import { useTenantDeposit } from '../hooks/useTenantDeposit';
 
-const VaultCard = ({ vaultId, vaultAddress, userRole, onRefresh }) => {
+const VaultCard = ({ vaultId, vaultAddress, userRole, onRefresh, cachedData }) => {
   const { account, getVaultContract, contracts } = useBlockchain();
   const { deposit, loading: depositLoading, error: depositError } = useTenantDeposit();
-  const [vault, setVault] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [vault, setVault] = useState(cachedData || null);
+  const [isLoading, setIsLoading] = useState(!cachedData);
   const [isActionLoading, setIsActionLoading] = useState(false);
 
   const loadVaultDetails = async () => {
+    // If we have cached data, use it and only fetch aToken balance
+    if (cachedData) {
+      try {
+        const aTokenAddress = import.meta.env.VITE_ATOKEN_ADDRESS;
+        let currentShareValue = cachedData.depositAmount;
+        
+        if (cachedData.deposited && !cachedData.settled && aTokenAddress) {
+          try {
+            const vaultContract = getVaultContract(vaultAddress);
+            if (vaultContract) {
+              const aTokenContract = new ethers.Contract(
+                aTokenAddress,
+                ["function balanceOf(address account) external view returns (uint256)"],
+                vaultContract.runner
+              );
+              const aTokenBalance = await aTokenContract.balanceOf(vaultAddress);
+              currentShareValue = aTokenBalance;
+            }
+          } catch (error) {
+            console.error("Error getting aToken balance:", error);
+          }
+        }
+        
+        setVault({
+          ...cachedData,
+          propertyName: fromBytes32(cachedData.propertyName),
+          propertyLocation: fromBytes32(cachedData.propertyLocation),
+          currentShareValue
+        });
+        setIsLoading(false);
+        return;
+      } catch (error) {
+        console.error("Error using cached data:", error);
+      }
+    }
+    
+    // Fallback to full fetch if no cached data
     try {
       setIsLoading(true);
       const vaultContract = getVaultContract(vaultAddress);
@@ -134,16 +171,23 @@ const VaultCard = ({ vaultId, vaultAddress, userRole, onRefresh }) => {
 
   if (isLoading) {
     return (
-      <div className="bg-white rounded-lg shadow-md p-4 animate-pulse">
-        <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-        <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
-        <div className="h-4 bg-gray-200 rounded w-5/6 mb-2"></div>
+      <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-xl rounded-2xl border border-white/10 p-6 animate-pulse">
+        <div className="h-6 bg-white/10 rounded-lg w-3/4 mb-4"></div>
+        <div className="space-y-3">
+          <div className="h-4 bg-white/10 rounded w-full"></div>
+          <div className="h-4 bg-white/10 rounded w-5/6"></div>
+          <div className="h-4 bg-white/10 rounded w-4/6"></div>
+        </div>
       </div>
     );
   }
 
   if (!vault) {
-    return <div>Error loading vault</div>;
+    return (
+      <div className="bg-red-500/10 backdrop-blur-xl rounded-2xl border border-red-500/20 p-6 text-center">
+        <p className="text-red-400">Error loading vault</p>
+      </div>
+    );
   }
 
   // The userRole is passed from parent component, but we still verify with contract data
@@ -153,125 +197,227 @@ const VaultCard = ({ vaultId, vaultAddress, userRole, onRefresh }) => {
   const canSettle = isLandlord && vault.deposited && !vault.settled && now >= Number(vault.endTs);
   const canDeposit = isTenant && !vault.deposited;
 
-  // Determine card styling based on status and role
-  let borderClass = userRole === 'landlord' ? 'border-blue-200' : 'border-green-200';
-  let bgClass = 'bg-white';
-  
-  if (vault.settled) {
-    borderClass = 'border-green-300';
-    bgClass = 'bg-green-50';
-  }
+  // Calculate yield
+  const yieldEarned = (vault.currentShareValue || 0n) - vault.depositAmount;
+  const hasYield = yieldEarned > 0n;
+
+  // Status configuration
+  const statusConfig = vault.settled 
+    ? { label: 'Settled', icon: '✅', gradient: 'from-green-500 to-emerald-500', bg: 'bg-green-500/10', border: 'border-green-500/30' }
+    : vault.deposited
+    ? { label: 'Active', icon: '🔥', gradient: 'from-blue-500 to-purple-500', bg: 'bg-blue-500/10', border: 'border-blue-500/30' }
+    : { label: 'Pending', icon: '⏳', gradient: 'from-yellow-500 to-orange-500', bg: 'bg-yellow-500/10', border: 'border-yellow-500/30' };
+
+  const roleConfig = userRole === 'landlord'
+    ? { gradient: 'from-blue-600 to-blue-500', icon: '🏠', label: 'Landlord' }
+    : { gradient: 'from-purple-600 to-purple-500', icon: '👤', label: 'Tenant' };
   
   return (
-    <div className={`${bgClass} rounded-lg shadow-md p-4 border ${borderClass}`}>
-      <div className="flex justify-between items-start">
-        <div>
-          <div className="flex items-center mb-1">
-            <h3 className="text-lg font-semibold mr-2">{vault.propertyName || `Vault #${vault.id}`}</h3>
-            <span className={`px-2 py-0.5 text-xs rounded-full ${
-              userRole === 'landlord' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
-            }`}>
-              {userRole === 'landlord' ? 'Landlord' : 'Tenant'}
+    <div className={`group relative bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-xl rounded-2xl border ${statusConfig.border} 
+                     hover:border-white/30 transition-all duration-300 overflow-hidden hover:shadow-2xl hover:shadow-${statusConfig.gradient}/10`}>
+      {/* Gradient Overlay */}
+      <div className={`absolute inset-0 bg-gradient-to-br ${statusConfig.gradient} opacity-0 group-hover:opacity-5 transition-opacity duration-300`}></div>
+      
+      <div className="relative p-6 space-y-6">
+        {/* Header */}
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <div className="flex items-center gap-3 mb-2">
+              <div className={`w-10 h-10 rounded-xl bg-gradient-to-r ${roleConfig.gradient} flex items-center justify-center text-xl shadow-lg`}>
+                {roleConfig.icon}
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-white">{vault.propertyName || `Agreement #${vault.id}`}</h3>
+                {vault.propertyLocation && (
+                  <p className="text-sm text-gray-400 flex items-center gap-1">
+                    <span>📍</span>
+                    {vault.propertyLocation}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-col items-end gap-2">
+            <span className={`px-3 py-1.5 rounded-lg text-xs font-bold ${statusConfig.bg} border ${statusConfig.border} 
+                           flex items-center gap-1.5 text-white shadow-lg`}>
+              <span>{statusConfig.icon}</span>
+              {statusConfig.label}
             </span>
-            {vault.settled && (
-              <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-green-100 text-green-800">
-                Completed
-              </span>
+            <span className={`px-3 py-1 rounded-lg text-xs font-medium bg-gradient-to-r ${roleConfig.gradient} 
+                           text-white shadow-lg`}>
+              {roleConfig.label}
+            </span>
+          </div>
+        </div>
+
+        {/* Parties Info */}
+        <div className="grid grid-cols-1 gap-3 p-4 bg-white/5 rounded-xl border border-white/10">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-400 flex items-center gap-2">
+              <span>🏠</span>
+              Landlord
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-sm text-white">{formatAddress(vault.landlord)}</span>
+              {isLandlord && (
+                <span className="px-2 py-0.5 bg-blue-500/20 border border-blue-500/30 rounded-full text-xs text-blue-400 font-medium">
+                  You
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-400 flex items-center gap-2">
+              <span>👤</span>
+              Tenant
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-sm text-white">{formatAddress(vault.tenant)}</span>
+              {isTenant && (
+                <span className="px-2 py-0.5 bg-purple-500/20 border border-purple-500/30 rounded-full text-xs text-purple-400 font-medium">
+                  You
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Financial Info */}
+        <div className="space-y-3">
+          {/* Deposit Amount */}
+          <div className="flex items-center justify-between p-4 bg-gradient-to-r from-yellow-500/10 to-orange-500/10 
+                         rounded-xl border border-yellow-500/20">
+            <span className="text-sm font-medium text-gray-300 flex items-center gap-2">
+              <span className="text-lg">💰</span>
+              Security Deposit
+            </span>
+            <span className="text-xl font-bold text-white">
+              ${formatUSDC(vault.depositAmount)}
+            </span>
+          </div>
+
+          {/* Yield Info - Only for active vaults */}
+          {vault.deposited && !vault.settled && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-4 bg-gradient-to-br from-purple-500/10 to-pink-500/10 rounded-xl border border-purple-500/20">
+                <div className="text-xs text-gray-400 mb-1 flex items-center gap-1">
+                  <span>📊</span>
+                  Current Value
+                </div>
+                <div className="text-lg font-bold text-white">
+                  ${formatUSDC(vault.currentShareValue || 0)}
+                </div>
+              </div>
+              <div className={`p-4 rounded-xl border ${hasYield ? 'bg-gradient-to-br from-green-500/10 to-emerald-500/10 border-green-500/20' : 'bg-white/5 border-white/10'}`}>
+                <div className="text-xs text-gray-400 mb-1 flex items-center gap-1">
+                  <span>📈</span>
+                  Yield Earned
+                </div>
+                <div className={`text-lg font-bold ${hasYield ? 'text-green-400' : 'text-gray-400'}`}>
+                  +${formatUSDC(yieldEarned)}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Timeline */}
+        <div className="flex items-center gap-4 p-4 bg-white/5 rounded-xl border border-white/10">
+          <div className="flex-1">
+            <div className="text-xs text-gray-400 mb-1 flex items-center gap-1">
+              <span>📅</span>
+              Start Date
+            </div>
+            <div className="text-sm font-medium text-white">{formatTimestamp(vault.startTs)}</div>
+          </div>
+          <div className="w-px h-10 bg-white/10"></div>
+          <div className="flex-1">
+            <div className="text-xs text-gray-400 mb-1 flex items-center gap-1">
+              <span>🏁</span>
+              End Date
+            </div>
+            <div className="text-sm font-medium text-white">{formatTimestamp(vault.endTs)}</div>
+          </div>
+        </div>
+
+        {/* Bonzo Integration Info - Only for active vaults */}
+        {vault.deposited && !vault.settled && (
+          <div className="p-4 bg-gradient-to-r from-purple-500/5 to-pink-500/5 rounded-xl border border-purple-500/20">
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center flex-shrink-0">
+                <span className="text-lg">🚀</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-purple-300 mb-1">Bonzo Finance Integration</div>
+                <p className="text-xs text-gray-400 mb-2">
+                  Your deposit is earning yield in the Bonzo lending pool
+                </p>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-gray-500">aToken Balance:</span>
+                  <span className="font-mono text-purple-400">{formatUSDC(vault.currentShareValue || 0)} aUSDC</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Actions */}
+        {(canDeposit || canSettle) && (
+          <div className="flex gap-3 pt-4 border-t border-white/10">
+            {canDeposit && (
+              <button 
+                onClick={handleDeposit}
+                disabled={isActionLoading || depositLoading}
+                className={`flex-1 px-4 py-3 rounded-xl font-semibold text-sm transition-all duration-200 
+                          ${(isActionLoading || depositLoading)
+                            ? 'bg-gray-600 text-gray-400 cursor-not-allowed' 
+                            : 'bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:shadow-xl hover:shadow-purple-500/50 hover:scale-105'
+                          } flex items-center justify-center gap-2`}
+              >
+                {(isActionLoading || depositLoading) ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <span>💎</span>
+                    Deposit & Supply
+                  </>
+                )}
+              </button>
+            )}
+            
+            {canSettle && (
+              <button
+                onClick={handleSettle}
+                disabled={isActionLoading}
+                className={`flex-1 px-4 py-3 rounded-xl font-semibold text-sm transition-all duration-200
+                          ${isActionLoading
+                            ? 'bg-gray-600 text-gray-400 cursor-not-allowed' 
+                            : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:shadow-xl hover:shadow-green-500/50 hover:scale-105'
+                          } flex items-center justify-center gap-2`}
+              >
+                {isActionLoading ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <span>✅</span>
+                    Settle Vault
+                  </>
+                )}
+              </button>
             )}
           </div>
-          {vault.propertyLocation && (
-            <p className="text-sm text-gray-600">{vault.propertyLocation}</p>
-          )}
-        </div>
-        <span className={`px-2 py-1 text-xs rounded-full ${
-          vault.settled
-            ? 'bg-green-100 text-green-800'
-            : vault.deposited
-            ? 'bg-blue-100 text-blue-800'
-            : 'bg-yellow-100 text-yellow-800'
-        }`}>
-          {vault.settled ? 'Settled' : vault.deposited ? 'Active' : 'Not Deposited'}
-        </span>
-      </div>
-      
-      <div className="mt-3 space-y-2 text-sm">
-        <div className="grid grid-cols-2 gap-2">
-          <p className="text-gray-600">Vault Address:</p>
-          <p className="font-mono text-xs break-all">{formatAddress(vault.address)}</p>
-          
-          <p className="text-gray-600">Landlord:</p>
-          <p className={isLandlord ? "font-medium text-blue-700" : ""}>
-            {formatAddress(vault.landlord)} 
-            {isLandlord && <span className="ml-1 text-xs bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded-full">You</span>}
-          </p>
-          
-          <p className="text-gray-600">Tenant:</p>
-          <p className={isTenant ? "font-medium text-green-700" : ""}>
-            {formatAddress(vault.tenant)} 
-            {isTenant && <span className="ml-1 text-xs bg-green-100 text-green-800 px-1.5 py-0.5 rounded-full">You</span>}
-          </p>
-          
-          <p className="text-gray-600">Deposit:</p>
-          <p>{formatUSDC(vault.depositAmount)} USDC</p>
-          
-          <p className="text-gray-600">Start Date:</p>
-          <p>{formatTimestamp(vault.startTs)}</p>
-          
-          <p className="text-gray-600">End Date:</p>
-          <p>{formatTimestamp(vault.endTs)}</p>
-          
-          {vault.deposited && !vault.settled && (
-            <>
-              <p className="text-gray-600">aToken Balance:</p>
-              <p className="font-mono text-xs text-purple-600">{formatUSDC(vault.currentShareValue || 0)} aUSDC</p>
-              
-              <p className="text-gray-600">Current Value:</p>
-              <p className="font-semibold">{formatUSDC(vault.currentShareValue || 0)} USDC</p>
-              
-              <p className="text-gray-600">Yield Earned:</p>
-              <p className={(vault.currentShareValue || 0n) > vault.depositAmount ? "text-green-600 font-semibold" : "text-gray-600"}>
-                {formatUSDC((vault.currentShareValue || 0n) - vault.depositAmount)} USDC
-              </p>
-            </>
-          )}
-        </div>
-      </div>
-      
-      {vault.deposited && !vault.settled && (
-        <div className="mt-3 p-3 bg-purple-50 border border-purple-200 rounded text-xs">
-          <p className="font-semibold text-purple-800 mb-1">💰 Bonzo Finance Integration</p>
-          <p className="text-gray-600">
-            Funds are supplied to Bonzo Finance lending pool. The aToken balance represents your deposit plus accrued yield.
-          </p>
-          <p className="text-gray-500 mt-1 font-mono text-[10px] break-all">
-            aToken: {import.meta.env.VITE_ATOKEN_ADDRESS}
-          </p>
-        </div>
-      )}
-      
-      <div className="mt-4 flex justify-end space-x-2">
-        {canDeposit && (
-          <button 
-            onClick={handleDeposit}
-            disabled={isActionLoading || depositLoading}
-            className={`px-3 py-1 rounded text-sm bg-blue-600 text-white ${
-              (isActionLoading || depositLoading) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-700'
-            }`}
-          >
-            {(isActionLoading || depositLoading) ? 'Processing...' : 'Deposit & Supply'}
-          </button>
-        )}
-        
-        {canSettle && (
-          <button
-            onClick={handleSettle}
-            disabled={isActionLoading}
-            className={`px-3 py-1 rounded text-sm bg-green-600 text-white ${
-              isActionLoading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-green-700'
-            }`}
-          >
-            {isActionLoading ? 'Processing...' : 'Settle Vault'}
-          </button>
         )}
       </div>
     </div>
