@@ -2,6 +2,7 @@ import { createContext, useState, useEffect, useCallback, useContext } from 'rea
 import { ethers } from 'ethers';
 import { checkEnvConfig } from '../utils/envCheck';
 import { showError, showWarning, showSuccess, showInfo } from '../utils/toast';
+import { withRetry, batchPromises } from '../utils/rpcRetry';
 
 // ABIs
 import EscrowFactoryABI from '../abis/EscrowFactory.json';
@@ -347,9 +348,9 @@ export const BlockchainProvider = ({ children }) => {
     );
   }, [signer]);
 
-  // Fetch all vaults with caching (5 minute cache)
+  // Fetch all vaults with caching (10 minute cache to reduce RPC calls)
   const fetchAllVaults = useCallback(async (forceRefresh = false) => {
-    const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+    const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes (increased from 5)
     const now = Date.now();
     
     // Return cached data if available and not expired
@@ -373,56 +374,67 @@ export const BlockchainProvider = ({ children }) => {
       setVaultsCache(prev => ({ ...prev, isLoading: true }));
       console.log('Fetching vaults from blockchain...');
       
-      const nextId = await contracts.factory.nextId();
+      // Use retry logic for critical calls
+      const nextId = await withRetry(() => contracts.factory.nextId());
       const vaultList = [];
       
+      // Batch vault fetches to avoid rate limiting
+      const vaultPromises = [];
+      
       for (let i = 1; i < Number(nextId); i++) {
-        try {
-          const vaultAddress = await contracts.factory.vaults(i);
-          if (vaultAddress === '0x0000000000000000000000000000000000000000') continue;
-          
-          const vaultContract = getVaultContract(vaultAddress);
-          if (!vaultContract) continue;
-          
-          const [landlord, tenant, depositAmount, startTs, endTs, deposited, settled, propertyName, propertyLocation] = await Promise.all([
-            vaultContract.landlord(),
-            vaultContract.tenant(),
-            vaultContract.depositAmount(),
-            vaultContract.startTs(),
-            vaultContract.endTs(),
-            vaultContract.deposited(),
-            vaultContract.settled(),
-            vaultContract.propertyName(),
-            vaultContract.propertyLocation()
-          ]);
-          
-          vaultList.push({
-            id: i,
-            address: vaultAddress,
-            landlord,
-            tenant,
-            depositAmount,
-            startTs,
-            endTs,
-            deposited,
-            settled,
-            propertyName,
-            propertyLocation
-          });
-        } catch (error) {
-          console.error(`Error loading vault ${i}:`, error);
-        }
+        vaultPromises.push(
+          withRetry(async () => {
+            const vaultAddress = await contracts.factory.vaults(i);
+            if (vaultAddress === '0x0000000000000000000000000000000000000000') return null;
+            
+            const vaultContract = getVaultContract(vaultAddress);
+            if (!vaultContract) return null;
+            
+            const [landlord, tenant, depositAmount, startTs, endTs, deposited, settled, propertyName, propertyLocation] = await Promise.all([
+              vaultContract.landlord(),
+              vaultContract.tenant(),
+              vaultContract.depositAmount(),
+              vaultContract.startTs(),
+              vaultContract.endTs(),
+              vaultContract.deposited(),
+              vaultContract.settled(),
+              vaultContract.propertyName(),
+              vaultContract.propertyLocation()
+            ]);
+            
+            return {
+              id: i,
+              address: vaultAddress,
+              landlord,
+              tenant,
+              depositAmount,
+              startTs,
+              endTs,
+              deposited,
+              settled,
+              propertyName,
+              propertyLocation
+            };
+          }).catch(error => {
+            console.error(`Error loading vault ${i}:`, error);
+            return null;
+          })
+        );
       }
       
+      // Process vaults in batches of 3 with 200ms delay between batches
+      const results = await batchPromises(vaultPromises, 3, 200);
+      const validVaults = results.filter(v => v !== null);
+      
       const cachedData = {
-        data: vaultList,
+        data: validVaults,
         lastFetched: now,
         isLoading: false
       };
       
       setVaultsCache(cachedData);
-      console.log(`Cached ${vaultList.length} vaults`);
-      return vaultList;
+      console.log(`Cached ${validVaults.length} vaults`);
+      return validVaults;
     } catch (error) {
       console.error('Error fetching vaults:', error);
       setVaultsCache(prev => ({ ...prev, isLoading: false }));
