@@ -1,5 +1,6 @@
 import { createContext, useState, useEffect, useCallback, useContext } from 'react';
 import { ethers } from 'ethers';
+import { checkEnvConfig } from '../utils/envCheck';
 
 // ABIs
 import EscrowFactoryABI from '../abis/EscrowFactory.json';
@@ -29,6 +30,11 @@ export const BlockchainProvider = ({ children }) => {
     lastFetched: null,
     isLoading: false
   });
+
+  // Check environment variables on mount
+  useEffect(() => {
+    checkEnvConfig();
+  }, []);
 
   const disconnectWallet = useCallback(() => {
     setAccount(null);
