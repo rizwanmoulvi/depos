@@ -1,5 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
+import hederaLogo from '../../assets/hedera-logo-black-a0b1bd4f.svg';
+import bonzoLogo from '../../assets/bonzo.png';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -52,15 +54,14 @@ export default function Home() {
               <span className="text-sm text-blue-400 font-medium">Now live on Hedera Testnet</span>
             </div>
 
-            <h1 className="text-6xl md:text-7xl font-bold mb-6 bg-gradient-to-r from-white via-blue-100 to-purple-200 bg-clip-text text-transparent">
-              Decentralized Rental
+            <h1 className="text-6xl md:text-6xl font-bold mb-6 bg-gradient-to-r from-white via-blue-100 to-purple-200 bg-clip-text text-transparent">
+              The Future of Rental Security Deposits
               <br />
-              Deposits on Hedera
+              Secure, Decentralized, and Yield-Generating
             </h1>
             
-            <p className="text-xl text-gray-300 max-w-3xl mx-auto mb-12 leading-relaxed">
-              Secure, transparent, and yield-generating rental agreements powered by smart contracts.
-              <span className="block mt-2 text-blue-400">Landlords and tenants, both benefit.</span>
+            <p className="text-xl text-gray-300 max-w-4xl mx-auto mb-12 leading-relaxed">
+              Rental Agreements Reinvented On Hedera Powered By Bonzo.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
@@ -91,6 +92,7 @@ export default function Home() {
                 <div className="text-gray-400 text-sm">{stat.label}</div>
               </div>
             ))}
+            <div className="text-center text-gray-400">Expected</div>
           </div>
         </div>
       </section>
@@ -134,11 +136,11 @@ export default function Home() {
           <div className="text-center mb-16">
             <span className="text-purple-400 font-semibold text-sm uppercase tracking-wide">Process</span>
             <h2 className="text-4xl md:text-5xl font-bold text-white mt-4 mb-4">
-              Simple Three-Step Process
+              Simple Four-Step Process
             </h2>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8">
+          <div className="grid md:grid-cols-4 gap-8">
             {[
               {
                 step: '01',
@@ -152,8 +154,13 @@ export default function Home() {
               },
               {
                 step: '03',
-                title: 'Earn & Settle',
+                title: 'Earn',
                 description: 'Deposits earn yield through Bonzo Finance until agreement ends'
+              },
+              {
+                step: '04',
+                title: 'Settle',
+                description: 'Tenant gets deposit and share of yield, landlord and platform gets a share of yield'
               }
             ].map((item, idx) => (
               <div key={idx} className="relative">
@@ -184,21 +191,39 @@ export default function Home() {
               {
                 name: 'Hedera',
                 description: 'High-speed, low-cost blockchain with enterprise-grade security',
-                color: 'from-purple-500 to-pink-500'
+                color: 'from-purple-500 to-pink-500',
+                image: hederaLogo,
+                imageType: 'logo'
               },
               {
                 name: 'Bonzo Finance',
                 description: 'DeFi lending protocol for automatic yield generation',
-                color: 'from-blue-500 to-cyan-500'
+                color: 'from-blue-500 to-cyan-500',
+                image: bonzoLogo,
+                imageType: 'logo'
               },
               {
                 name: 'Smart Contracts',
                 description: 'Audited, secure escrow contracts for transparent agreements',
-                color: 'from-green-500 to-emerald-500'
+                color: 'from-green-500 to-emerald-500',
+                icon: '📜',
+                imageType: 'icon'
               }
             ].map((tech, idx) => (
-              <div key={idx} className="p-8 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all">
-                <div className={`w-12 h-12 rounded-lg bg-gradient-to-r ${tech.color} mb-4`}></div>
+              <div key={idx} className="p-8 bg-white/5 rounded-2xl border border-white/10 hover:border-white/20 transition-all group">
+                {tech.imageType === 'logo' ? (
+                  <div className="w-16 h-16 rounded-lg bg-white/95 p-3 mb-4 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <img 
+                      src={tech.image} 
+                      alt={tech.name} 
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                ) : (
+                  <div className="w-16 h-16 rounded-lg bg-gradient-to-r from-green-500 to-emerald-500 mb-4 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
+                    {tech.icon}
+                  </div>
+                )}
                 <h3 className="text-xl font-bold text-white mb-3">{tech.name}</h3>
                 <p className="text-gray-400">{tech.description}</p>
               </div>
