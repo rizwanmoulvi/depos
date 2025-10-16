@@ -3,6 +3,22 @@ import { useBlockchain } from '../contexts/BlockchainContext';
 import { parseUSDC } from '../utils/format';
 import { showSuccess, showError, showWarning } from '../utils/toast';
 
+// Move InputField outside to prevent re-creation on every render
+const InputField = ({ label, icon, ...props }) => (
+  <div className="group">
+    <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+      <span className="text-lg">{icon}</span>
+      {label}
+    </label>
+    <input
+      {...props}
+      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder-gray-500 
+                 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:bg-white/10 
+                 transition-all duration-200 outline-none"
+    />
+  </div>
+);
+
 const CreateAgreementForm = ({ onAgreementCreated }) => {
   const { account, contracts, invalidateVaultsCache } = useBlockchain();
   const [isLoading, setIsLoading] = useState(false);
@@ -10,6 +26,7 @@ const CreateAgreementForm = ({ onAgreementCreated }) => {
     landlord: '',
     tenant: '',
     depositAmount: '',
+    monthlyRent: '',
     startDate: '',
     startTime: '12:00',
     endDate: '',
@@ -47,12 +64,14 @@ const CreateAgreementForm = ({ onAgreementCreated }) => {
       
       // Convert amount to USDC units (6 decimals)
       const depositAmount = parseUSDC(formData.depositAmount);
+      const monthlyRent = parseUSDC(formData.monthlyRent || '0');
       
       // Call contract
       const tx = await contracts.factory.createAgreement(
         formData.landlord,
         formData.tenant,
         depositAmount,
+        monthlyRent,
         startTs,
         endTs,
         formData.propertyName,
@@ -71,6 +90,7 @@ const CreateAgreementForm = ({ onAgreementCreated }) => {
         landlord: '',
         tenant: '',
         depositAmount: '',
+        monthlyRent: '',
         startDate: '',
         startTime: '12:00',
         endDate: '',
@@ -91,21 +111,6 @@ const CreateAgreementForm = ({ onAgreementCreated }) => {
       setIsLoading(false);
     }
   };
-
-  const InputField = ({ label, icon, ...props }) => (
-    <div className="group">
-      <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
-        <span className="text-lg">{icon}</span>
-        {label}
-      </label>
-      <input
-        {...props}
-        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder-gray-500 
-                   focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:bg-white/10 
-                   transition-all duration-200 outline-none"
-      />
-    </div>
-  );
 
   return (
     <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-xl rounded-3xl border border-white/20 p-6 md:p-8 shadow-2xl">
@@ -240,6 +245,7 @@ const CreateAgreementForm = ({ onAgreementCreated }) => {
               placeholder="e.g., Downtown Apartment 5B"
               value={formData.propertyName}
               onChange={handleChange}
+              maxLength={31}
               required
             />
             <InputField
@@ -250,24 +256,25 @@ const CreateAgreementForm = ({ onAgreementCreated }) => {
               placeholder="e.g., 123 Main Street, NYC"
               value={formData.propertyLocation}
               onChange={handleChange}
+              maxLength={31}
               required
             />
           </div>
         </div>
 
-        {/* Section 4: Deposit */}
+        {/* Section 4: Financial Details */}
         <div className="space-y-4">
           <div className="flex items-center gap-2 mb-4">
             <div className="w-8 h-8 rounded-lg bg-yellow-500/20 flex items-center justify-center text-yellow-400 font-bold">
               4
             </div>
-            <h3 className="text-lg font-semibold text-white">Security Deposit</h3>
+            <h3 className="text-lg font-semibold text-white">Financial Details</h3>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pl-10">
-            <div className="relative md:col-span-1">
+            <div className="relative">
               <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
                 <span className="text-lg">💰</span>
-                Deposit Amount
+                Security Deposit
               </label>
               <div className="relative">
                 <input
@@ -285,11 +292,38 @@ const CreateAgreementForm = ({ onAgreementCreated }) => {
                   <span className="text-yellow-400 font-bold text-sm">USDC</span>
                 </div>
               </div>
-              <p className="text-xs text-gray-400 mt-2 flex items-center gap-1">
-                <span>💡</span>
-                Funds will be supplied to Bonzo Finance to earn yield
+            </div>
+            <div className="relative">
+              <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                <span className="text-lg">🏠</span>
+                Monthly Rent
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  name="monthlyRent"
+                  placeholder="500"
+                  value={formData.monthlyRent}
+                  onChange={handleChange}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-4 pr-16 py-3.5 text-white placeholder-gray-500 
+                           focus:border-yellow-500 focus:ring-2 focus:ring-yellow-500/20 focus:bg-white/10 
+                           transition-all duration-200 outline-none text-lg font-semibold"
+                />
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 px-3 py-1 bg-yellow-500/20 rounded-lg">
+                  <span className="text-yellow-400 font-bold text-sm">USDC</span>
+                </div>
+              </div>
+              <p className="mt-2 text-xs text-gray-400 flex items-center gap-1">
+                <span>ℹ️</span>
+                Optional: Tenant can pay rent monthly through the platform
               </p>
             </div>
+          </div>
+          <div className="mt-4">
+            <p className="text-xs text-gray-400 flex items-center gap-1 pl-10">
+              <span>💡</span>
+              Security deposit will be supplied to Bonzo Finance to earn yield
+            </p>
           </div>
         </div>
 

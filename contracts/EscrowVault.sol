@@ -42,8 +42,14 @@ contract EscrowVault is ReentrancyGuard {
     bool public settled;
     uint256 public initialDeposit;
 
+    // Monthly rent feature
+    uint256 public monthlyRent;
+    mapping(uint256 => bool) public rentPaidForMonth; // month index => paid status
+    uint256 public totalRentPaid;
+
     event Deposited(address indexed tenant, uint256 amount);
     event Settled(uint256 principal, uint256 yieldAmount, uint256 fee);
+    event RentPaid(address indexed tenant, uint256 month, uint256 amount, uint256 timestamp);
 
     modifier onlyFactory() {
         require(msg.sender == factory, "only factory");
@@ -70,6 +76,7 @@ contract EscrowVault is ReentrancyGuard {
         address aToken;
         address treasury;
         uint256 depositAmount;
+        uint256 monthlyRent;
         uint256 startTs;
         uint256 endTs;
         bytes32 propertyName;
@@ -90,6 +97,7 @@ contract EscrowVault is ReentrancyGuard {
         aToken = IAToken(params.aToken);
         treasury = params.treasury;
         depositAmount = params.depositAmount;
+        monthlyRent = params.monthlyRent;
         startTs = params.startTs;
         endTs = params.endTs;
         propertyName = params.propertyName;
@@ -148,6 +156,38 @@ contract EscrowVault is ReentrancyGuard {
 
         settled = true;
         emit Settled(principal, yieldAmount, fee);
+    }
+
+    // Pay monthly rent - tenant can pay any month that hasn't been paid yet
+    function payRent(uint256 monthIndex) external nonReentrant {
+        require(msg.sender == tenant, "only tenant");
+        require(monthlyRent > 0, "no rent configured");
+        require(!rentPaidForMonth[monthIndex], "rent already paid for this month");
+        
+        // Calculate if the month is valid (between start and end date)
+        uint256 totalMonths = (endTs - startTs) / 30 days;
+        
+        require(monthIndex <= totalMonths, "month index out of range");
+        
+        // Transfer rent from tenant to landlord
+        usdc.safeTransferFrom(tenant, landlord, monthlyRent);
+        
+        // Mark as paid
+        rentPaidForMonth[monthIndex] = true;
+        totalRentPaid += monthlyRent;
+        
+        emit RentPaid(tenant, monthIndex, monthlyRent, block.timestamp);
+    }
+
+    // Get current month index
+    function getCurrentMonthIndex() external view returns (uint256) {
+        if (block.timestamp < startTs) return 0;
+        return (block.timestamp - startTs) / 30 days;
+    }
+
+    // Check if rent is paid for a specific month
+    function isRentPaidForMonth(uint256 monthIndex) external view returns (bool) {
+        return rentPaidForMonth[monthIndex];
     }
 
     // Emergency withdraw by factory (admin)

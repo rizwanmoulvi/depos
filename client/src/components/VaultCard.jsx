@@ -19,6 +19,22 @@ const VaultCard = ({ vaultId, vaultAddress, userRole, onRefresh, cachedData }) =
         const aTokenAddress = import.meta.env.VITE_ATOKEN_ADDRESS;
         let currentShareValue = cachedData.depositAmount;
         
+        // Get fresh monthly rent data
+        const vaultContract = getVaultContract(vaultAddress);
+        let monthlyRent = cachedData.monthlyRent || 0n;
+        let totalRentPaid = cachedData.totalRentPaid || 0n;
+        let currentMonthIndex = cachedData.currentMonthIndex || 0n;
+        
+        if (vaultContract) {
+          try {
+            monthlyRent = await vaultContract.monthlyRent();
+            totalRentPaid = await vaultContract.totalRentPaid();
+            currentMonthIndex = await vaultContract.getCurrentMonthIndex();
+          } catch (error) {
+            console.error("Error getting rent data:", error);
+          }
+        }
+        
         if (cachedData.deposited && !cachedData.settled && aTokenAddress) {
           try {
             const vaultContract = getVaultContract(vaultAddress);
@@ -40,6 +56,9 @@ const VaultCard = ({ vaultId, vaultAddress, userRole, onRefresh, cachedData }) =
           ...cachedData,
           propertyName: fromBytes32(cachedData.propertyName),
           propertyLocation: fromBytes32(cachedData.propertyLocation),
+          monthlyRent,
+          totalRentPaid,
+          currentMonthIndex,
           currentShareValue
         });
         setIsLoading(false);
@@ -66,6 +85,9 @@ const VaultCard = ({ vaultId, vaultAddress, userRole, onRefresh, cachedData }) =
       const settled = await vaultContract.settled();
       const propertyName = await vaultContract.propertyName();
       const propertyLocation = await vaultContract.propertyLocation();
+      const monthlyRent = await vaultContract.monthlyRent();
+      const totalRentPaid = await vaultContract.totalRentPaid();
+      const currentMonthIndex = await vaultContract.getCurrentMonthIndex();
       
       // Get aToken address from environment (same for all vaults on testnet)
       const aTokenAddress = import.meta.env.VITE_ATOKEN_ADDRESS;
@@ -92,6 +114,9 @@ const VaultCard = ({ vaultId, vaultAddress, userRole, onRefresh, cachedData }) =
         landlord,
         tenant,
         depositAmount,
+        monthlyRent,
+        totalRentPaid,
+        currentMonthIndex,
         startTs,
         endTs,
         deposited,
@@ -170,6 +195,40 @@ const VaultCard = ({ vaultId, vaultAddress, userRole, onRefresh, cachedData }) =
     }
   };
 
+  const handlePayRent = async (monthIndex) => {
+    if (!vault || !account) return;
+    
+    try {
+      setIsActionLoading(true);
+      
+      const vaultContract = getVaultContract(vault.address);
+      
+      // Check if already paid
+      const isPaid = await vaultContract.isRentPaidForMonth(monthIndex);
+      if (isPaid) {
+        showWarning('Already Paid', `Rent for month ${monthIndex + 1} has already been paid`);
+        return;
+      }
+      
+      // Approve USDC transfer first
+      const approveTx = await contracts.usdc.approve(vault.address, vault.monthlyRent);
+      await approveTx.wait();
+      
+      // Pay rent
+      const payTx = await vaultContract.payRent(monthIndex);
+      await payTx.wait();
+      
+      showSuccess('Rent Paid!', `Successfully paid ${formatUSDC(vault.monthlyRent)} for month ${monthIndex + 1}`);
+      loadVaultDetails();
+      if (onRefresh) onRefresh();
+    } catch (error) {
+      console.error('Error paying rent:', error);
+      showError(error.message || 'Failed to pay rent');
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-xl rounded-2xl border border-white/10 p-6 animate-pulse">
@@ -197,6 +256,7 @@ const VaultCard = ({ vaultId, vaultAddress, userRole, onRefresh, cachedData }) =
   const now = Math.floor(Date.now() / 1000);
   const canSettle = isLandlord && vault.deposited && !vault.settled && now >= Number(vault.endTs);
   const canDeposit = isTenant && !vault.deposited;
+  const canPayRent = isTenant && vault.monthlyRent > 0n && vault.deposited && !vault.settled;
 
   // Calculate yield
   const yieldEarned = (vault.currentShareValue || 0n) - vault.depositAmount;
@@ -297,6 +357,28 @@ const VaultCard = ({ vaultId, vaultAddress, userRole, onRefresh, cachedData }) =
             </span>
           </div>
 
+          {/* Monthly Rent Info */}
+          {vault.monthlyRent > 0n && (
+            <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 
+                           rounded-xl border border-blue-500/20">
+              <div className="flex-1">
+                <span className="text-sm font-medium text-gray-300 flex items-center gap-2">
+                  <span className="text-lg">🏠</span>
+                  Monthly Rent
+                </span>
+                <div className="text-xl font-bold text-white mt-1">
+                  ${formatUSDC(vault.monthlyRent)}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-xs text-gray-400 mb-1">Total Paid</div>
+                <div className="text-sm font-semibold text-blue-400">
+                  ${formatUSDC(vault.totalRentPaid || 0)}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Yield Info - Only for active vaults */}
           {vault.deposited && !vault.settled && (
             <div className="grid grid-cols-2 gap-3">
@@ -363,7 +445,7 @@ const VaultCard = ({ vaultId, vaultAddress, userRole, onRefresh, cachedData }) =
         )}
 
         {/* Actions */}
-        {(canDeposit || canSettle) && (
+        {(canDeposit || canSettle || canPayRent) && (
           <div className="flex gap-3 pt-4 border-t border-white/10">
             {canDeposit && (
               <button 
@@ -387,6 +469,33 @@ const VaultCard = ({ vaultId, vaultAddress, userRole, onRefresh, cachedData }) =
                   <>
                     <span>💎</span>
                     Deposit & Supply
+                  </>
+                )}
+              </button>
+            )}
+            
+            {canPayRent && (
+              <button
+                onClick={() => handlePayRent(vault.currentMonthIndex)}
+                disabled={isActionLoading}
+                className={`flex-1 px-4 py-3 rounded-xl font-semibold text-sm transition-all duration-200
+                          ${isActionLoading
+                            ? 'bg-gray-600 text-gray-400 cursor-not-allowed' 
+                            : 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white hover:shadow-xl hover:shadow-blue-500/50 hover:scale-105'
+                          } flex items-center justify-center gap-2`}
+              >
+                {isActionLoading ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <span>🏠</span>
+                    Pay Rent (Month {Number(vault.currentMonthIndex) + 1})
                   </>
                 )}
               </button>
