@@ -1,6 +1,7 @@
 import { createContext, useState, useEffect, useCallback, useContext } from 'react';
 import { ethers } from 'ethers';
 import { checkEnvConfig } from '../utils/envCheck';
+import { showError, showWarning } from '../utils/toast';
 
 // ABIs
 import EscrowFactoryABI from '../abis/EscrowFactory.json';
@@ -49,7 +50,7 @@ export const BlockchainProvider = ({ children }) => {
       
       if (!window.ethereum) {
         console.error('❌ [connectWallet] MetaMask not found');
-        alert('Please install MetaMask');
+        showError('Please install MetaMask to continue');
         return false;
       }
 
@@ -71,6 +72,7 @@ export const BlockchainProvider = ({ children }) => {
         const errorMsg = `Please switch to the correct network (Chain ID: ${targetChainId})`;
         console.warn('⚠️ [connectWallet] Wrong network:', errorMsg);
         setNetworkError(errorMsg);
+        showWarning('Wrong Network', `Please switch to Hedera Testnet (Chain ID: ${targetChainId})`);
       } else {
         console.log('✅ [connectWallet] Correct network');
         setNetworkError(null);
@@ -118,7 +120,7 @@ export const BlockchainProvider = ({ children }) => {
         stack: error.stack
       });
       if (!isAutoConnect) {
-        alert(`Error connecting wallet: ${error.message}`);
+        showError(error.message || 'Failed to connect wallet');
       }
       return false;
     } finally {

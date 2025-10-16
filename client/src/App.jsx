@@ -1,4 +1,5 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
 import { BlockchainProvider } from './contexts/BlockchainContext';
 import Navbar from './components/Navbar';
 import Home from './pages/Home';
@@ -12,6 +13,15 @@ function App() {
       <BlockchainProvider>
         <div className="min-h-screen bg-gray-900">
           <Navbar />
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              className: '',
+              style: {
+                marginTop: '60px',
+              },
+            }}
+          />
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/role-selection" element={<RoleSelectionPage />} />

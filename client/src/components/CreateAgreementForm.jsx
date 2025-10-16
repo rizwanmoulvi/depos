@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useBlockchain } from '../contexts/BlockchainContext';
 import { parseUSDC } from '../utils/format';
+import { showSuccess, showError, showWarning } from '../utils/toast';
 
 const CreateAgreementForm = ({ onAgreementCreated }) => {
   const { account, contracts, invalidateVaultsCache } = useBlockchain();
@@ -26,7 +27,7 @@ const CreateAgreementForm = ({ onAgreementCreated }) => {
     e.preventDefault();
     
     if (!contracts.factory) {
-      alert('Contract not connected');
+      showWarning('Not Connected', 'Please connect your wallet first');
       return;
     }
 
@@ -82,10 +83,10 @@ const CreateAgreementForm = ({ onAgreementCreated }) => {
         onAgreementCreated();
       }
       
-      alert('Agreement created successfully!');
+      showSuccess('Agreement Created!', 'New rental agreement has been created successfully');
     } catch (error) {
       console.error('Error creating agreement:', error);
-      alert(`Error creating agreement: ${error.message}`);
+      showError(error.message || 'Failed to create agreement');
     } finally {
       setIsLoading(false);
     }

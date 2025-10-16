@@ -3,6 +3,7 @@ import { ethers } from 'ethers';
 import { useBlockchain } from '../contexts/BlockchainContext';
 import { formatAddress, formatTimestamp, formatUSDC, fromBytes32 } from '../utils/format';
 import { useTenantDeposit } from '../hooks/useTenantDeposit';
+import { showSuccess, showError } from '../utils/toast';
 
 const VaultCard = ({ vaultId, vaultAddress, userRole, onRefresh, cachedData }) => {
   const { account, getVaultContract, contracts } = useBlockchain();
@@ -137,12 +138,12 @@ const VaultCard = ({ vaultId, vaultAddress, userRole, onRefresh, cachedData }) =
         throw depositError;
       }
       
-      alert('Deposit successful!');
+      showSuccess('Deposit Successful!', `${formatUSDC(vault.depositAmount)} deposited to vault`);
       loadVaultDetails();
       if (onRefresh) onRefresh();
     } catch (error) {
       console.error('Error depositing:', error);
-      alert(`Error depositing: ${error.message}`);
+      showError(error.message || 'Failed to deposit');
     } finally {
       setIsActionLoading(false);
     }
@@ -158,12 +159,12 @@ const VaultCard = ({ vaultId, vaultAddress, userRole, onRefresh, cachedData }) =
       const settleTx = await vaultContract.settle();
       await settleTx.wait();
       
-      alert('Vault settled successfully!');
+      showSuccess('Vault Settled!', 'Deposit has been returned with yield');
       loadVaultDetails();
       if (onRefresh) onRefresh();
     } catch (error) {
       console.error('Error settling vault:', error);
-      alert(`Error settling vault: ${error.message}`);
+      showError(error.message || 'Failed to settle vault');
     } finally {
       setIsActionLoading(false);
     }
