@@ -40,6 +40,21 @@ export default function Navbar() {
     navigate(`/${role}`);
   };
 
+  const handleConnectWallet = async () => {
+    console.log('🔵 [Navbar] Connect button clicked');
+    try {
+      const success = await connectWallet();
+      console.log('🔵 [Navbar] Connect result:', success);
+      if (success) {
+        console.log('✅ [Navbar] Wallet connected successfully');
+      } else {
+        console.log('❌ [Navbar] Wallet connection failed');
+      }
+    } catch (error) {
+      console.error('❌ [Navbar] Error in handleConnectWallet:', error);
+    }
+  };
+
   const isOnDashboard = location.pathname === '/landlord' || location.pathname === '/tenant';
 
   return (
@@ -156,7 +171,7 @@ export default function Navbar() {
               </div>
             ) : (
               <button
-                onClick={connectWallet}
+                onClick={handleConnectWallet}
                 className="px-6 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg font-semibold text-sm hover:shadow-lg hover:shadow-blue-500/50 transition-all hover:scale-105"
               >
                 Connect Wallet

@@ -45,51 +45,78 @@ export const BlockchainProvider = ({ children }) => {
 
   const connectWallet = useCallback(async (isAutoConnect = false) => {
     try {
+      console.log('🔵 [connectWallet] Starting wallet connection...', { isAutoConnect });
+      
       if (!window.ethereum) {
+        console.error('❌ [connectWallet] MetaMask not found');
         alert('Please install MetaMask');
         return false;
       }
 
+      console.log('✅ [connectWallet] MetaMask detected, creating provider...');
       const provider = new ethers.BrowserProvider(window.ethereum);
       const network = await provider.getNetwork();
+      console.log('🌐 [connectWallet] Network detected:', { 
+        chainId: network.chainId.toString(),
+        name: network.name 
+      });
+      
       setChainId(network.chainId);
       
       // Check if correct network
       const targetChainId = import.meta.env.VITE_CHAIN_ID;
+      console.log('🎯 [connectWallet] Target chain ID:', targetChainId);
+      
       if (network.chainId.toString() !== targetChainId) {
-        setNetworkError(`Please switch to the correct network (Chain ID: ${targetChainId})`);
+        const errorMsg = `Please switch to the correct network (Chain ID: ${targetChainId})`;
+        console.warn('⚠️ [connectWallet] Wrong network:', errorMsg);
+        setNetworkError(errorMsg);
       } else {
+        console.log('✅ [connectWallet] Correct network');
         setNetworkError(null);
       }
 
       // If auto-connecting, use eth_accounts which doesn't trigger a popup
       // Otherwise use eth_requestAccounts which will prompt the user
       const method = isAutoConnect ? "eth_accounts" : "eth_requestAccounts";
+      console.log(`🔑 [connectWallet] Requesting accounts using: ${method}`);
+      
       const accounts = await provider.send(method, []);
+      console.log('📋 [connectWallet] Accounts received:', accounts.length);
       
       // If no accounts, auto-connect failed (user not previously connected)
       if (accounts.length === 0) {
         if (isAutoConnect) {
+          console.log('ℹ️ [connectWallet] Auto-connect failed (no accounts)');
           return false; // Auto-connect failed, don't show error
         }
         throw new Error("No accounts found. Please unlock MetaMask.");
       }
 
       const account = accounts[0];
+      console.log('👤 [connectWallet] Account connected:', account);
       setAccount(account);
       
       const signer = await provider.getSigner();
+      console.log('✍️ [connectWallet] Signer obtained');
       setSigner(signer);
       setProvider(provider);
 
+      console.log('📜 [connectWallet] Initializing contracts...');
       initContracts(provider, signer);
       
       // Save to localStorage to enable auto-connect
       localStorage.setItem('walletConnected', 'true');
+      console.log('💾 [connectWallet] Saved to localStorage');
       
+      console.log('🎉 [connectWallet] Wallet connection successful!');
       return true;
     } catch (error) {
-      console.error('Error connecting wallet:', error);
+      console.error('❌ [connectWallet] Error:', {
+        message: error.message,
+        code: error.code,
+        stack: error.stack
+      });
       if (!isAutoConnect) {
         alert(`Error connecting wallet: ${error.message}`);
       }
