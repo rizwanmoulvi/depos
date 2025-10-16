@@ -1,7 +1,7 @@
 import { createContext, useState, useEffect, useCallback, useContext } from 'react';
 import { ethers } from 'ethers';
 import { checkEnvConfig } from '../utils/envCheck';
-import { showError, showWarning } from '../utils/toast';
+import { showError, showWarning, showSuccess, showInfo } from '../utils/toast';
 
 // ABIs
 import EscrowFactoryABI from '../abis/EscrowFactory.json';
@@ -72,7 +72,77 @@ export const BlockchainProvider = ({ children }) => {
         const errorMsg = `Please switch to the correct network (Chain ID: ${targetChainId})`;
         console.warn('⚠️ [connectWallet] Wrong network:', errorMsg);
         setNetworkError(errorMsg);
-        showWarning('Wrong Network', `Please switch to Hedera Testnet (Chain ID: ${targetChainId})`);
+        
+        // Don't prompt during auto-connect
+        if (!isAutoConnect) {
+          // Show custom toast
+          showWarning(
+            'Wrong Network Detected',
+            'You are connected to the wrong network. Switch to Hedera Testnet to continue.'
+          );
+          
+          // Wait a moment for the toast to be visible, then prompt network switch
+          setTimeout(async () => {
+            const userConfirmed = window.confirm(
+              'You are connected to the wrong network.\n\n' +
+              'Would you like to switch to Hedera Testnet now?\n\n' +
+              `Current Network: Chain ID ${network.chainId}\n` +
+              `Required Network: Hedera Testnet (Chain ID ${targetChainId})`
+            );
+            
+            if (userConfirmed) {
+              // Attempt to switch network inline
+              try {
+                const chainIdHex = `0x${parseInt(targetChainId).toString(16)}`;
+                console.log('🔄 [connectWallet] Attempting to switch network...');
+                
+                await window.ethereum.request({
+                  method: 'wallet_switchEthereumChain',
+                  params: [{ chainId: chainIdHex }],
+                });
+                
+                showSuccess('Network Switched!', 'Successfully connected to Hedera Testnet');
+                // Reload to reinitialize with new network
+                window.location.reload();
+              } catch (switchError) {
+                // Network not added, try to add it
+                if (switchError.code === 4902) {
+                  try {
+                    const chainIdHex = `0x${parseInt(targetChainId).toString(16)}`;
+                    const rpcUrl = import.meta.env.VITE_NETWORK_RPC || 'https://testnet.hashio.io/api';
+                    
+                    await window.ethereum.request({
+                      method: 'wallet_addEthereumChain',
+                      params: [{
+                        chainId: chainIdHex,
+                        chainName: 'Hedera Testnet',
+                        nativeCurrency: {
+                          name: 'HBAR',
+                          symbol: 'HBAR',
+                          decimals: 18,
+                        },
+                        rpcUrls: [rpcUrl],
+                        blockExplorerUrls: ['https://hashscan.io/testnet'],
+                      }],
+                    });
+                    
+                    showSuccess('Network Added!', 'Hedera Testnet has been added to your wallet');
+                    window.location.reload();
+                  } catch (addError) {
+                    console.error('Failed to add network:', addError);
+                    showError('Failed to add network');
+                  }
+                } else if (switchError.code === 4001) {
+                  showWarning('Network Switch Cancelled', 'Please manually switch to Hedera Testnet');
+                } else {
+                  showError('Failed to switch network');
+                }
+              }
+            } else {
+              showInfo('Network Switch Required', 'Please manually switch to Hedera Testnet in your wallet');
+            }
+          }, 500);
+        }
       } else {
         console.log('✅ [connectWallet] Correct network');
         setNetworkError(null);
@@ -174,6 +244,97 @@ export const BlockchainProvider = ({ children }) => {
       console.error('Error initializing contracts:', error);
     }
   }, []);
+
+  const switchToHederaTestnet = useCallback(async () => {
+    try {
+      const targetChainId = import.meta.env.VITE_CHAIN_ID;
+      const chainIdHex = `0x${parseInt(targetChainId).toString(16)}`;
+      
+      console.log('🔄 [switchNetwork] Attempting to switch to Hedera Testnet...', { chainIdHex });
+      
+      // Try to switch to the network
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: chainIdHex }],
+      });
+      
+      console.log('✅ [switchNetwork] Successfully switched to Hedera Testnet');
+      showSuccess('Network Switched!', 'Successfully connected to Hedera Testnet');
+      
+      // Reload wallet connection to update provider/signer
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const network = await provider.getNetwork();
+      setChainId(network.chainId);
+      setNetworkError(null);
+      
+      if (account) {
+        const signer = await provider.getSigner();
+        setSigner(signer);
+        setProvider(provider);
+        initContracts(provider, signer);
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('❌ [switchNetwork] Error:', error);
+      
+      // If network doesn't exist in wallet, try to add it
+      if (error.code === 4902) {
+        try {
+          console.log('➕ [switchNetwork] Network not found, attempting to add...');
+          
+          const targetChainId = import.meta.env.VITE_CHAIN_ID;
+          const chainIdHex = `0x${parseInt(targetChainId).toString(16)}`;
+          const rpcUrl = import.meta.env.VITE_NETWORK_RPC || 'https://testnet.hashio.io/api';
+          
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: chainIdHex,
+              chainName: 'Hedera Testnet',
+              nativeCurrency: {
+                name: 'HBAR',
+                symbol: 'HBAR',
+                decimals: 18,
+              },
+              rpcUrls: [rpcUrl],
+              blockExplorerUrls: ['https://hashscan.io/testnet'],
+            }],
+          });
+          
+          console.log('✅ [switchNetwork] Successfully added and switched to Hedera Testnet');
+          showSuccess('Network Added!', 'Hedera Testnet has been added to your wallet');
+          
+          // Reload wallet connection
+          const provider = new ethers.BrowserProvider(window.ethereum);
+          const network = await provider.getNetwork();
+          setChainId(network.chainId);
+          setNetworkError(null);
+          
+          if (account) {
+            const signer = await provider.getSigner();
+            setSigner(signer);
+            setProvider(provider);
+            initContracts(provider, signer);
+          }
+          
+          return true;
+        } catch (addError) {
+          console.error('❌ [switchNetwork] Failed to add network:', addError);
+          showError('Failed to add network');
+          return false;
+        }
+      } else if (error.code === 4001) {
+        // User rejected the request
+        console.log('⚠️ [switchNetwork] User rejected network switch');
+        showWarning('Network Switch Cancelled', 'Please switch to Hedera Testnet to continue');
+        return false;
+      } else {
+        showError('Failed to switch network');
+        return false;
+      }
+    }
+  }, [account, initContracts]);
 
   // Create a contract instance for a vault
   const getVaultContract = useCallback((vaultAddress) => {
@@ -313,8 +474,35 @@ export const BlockchainProvider = ({ children }) => {
     };
 
     // Handle chain changes
-    const handleChainChanged = () => {
-      window.location.reload();
+    const handleChainChanged = async (chainIdHex) => {
+      console.log('🔄 [chainChanged] Network changed to:', chainIdHex);
+      const newChainId = parseInt(chainIdHex, 16);
+      const targetChainId = import.meta.env.VITE_CHAIN_ID;
+      
+      if (newChainId.toString() !== targetChainId) {
+        console.warn('⚠️ [chainChanged] Wrong network detected');
+        setNetworkError(`Please switch to the correct network (Chain ID: ${targetChainId})`);
+        
+        // Show warning with option to switch
+        setTimeout(async () => {
+          const userConfirmed = window.confirm(
+            'You have switched to a different network.\n\n' +
+            'Would you like to switch back to Hedera Testnet?\n\n' +
+            `Current Network: Chain ID ${newChainId}\n` +
+            `Required Network: Hedera Testnet (Chain ID ${targetChainId})`
+          );
+          
+          if (userConfirmed && switchToHederaTestnet) {
+            await switchToHederaTestnet();
+          }
+        }, 500);
+      } else {
+        console.log('✅ [chainChanged] Correct network');
+        setNetworkError(null);
+        showSuccess('Network Changed', 'Successfully connected to Hedera Testnet');
+        // Reload to reinitialize contracts with new network
+        window.location.reload();
+      }
     };
 
     if (window.ethereum) {
@@ -338,6 +526,7 @@ export const BlockchainProvider = ({ children }) => {
     contracts,
     connectWallet: (isAuto) => connectWallet(isAuto),
     disconnectWallet,
+    switchToHederaTestnet,
     networkError,
     getVaultContract,
     isAutoConnecting,
